@@ -1,0 +1,93 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2639
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 #Simulate an indistinguishable dyads dataset and conduct power analyses to determine power for the moderation by relationship type and a sum effect\
+#Code borrowed from Soderberg, Lane, & Hennes SIPS 2018 workshop (https://osf.io/mp2za); Randi Garcia\'92s R workshop (https://github.com/RandiLGarcia/2day-dyad-workshop/blob/master/Day 1/R Code/Day 1-Actor-Partner Interdependence Model.Rmd), and Ethan Young\'92s restructuring dyadic data tutorial (https://www.ethan-young.com/code/restructuring-dyadic-data/)\
+\
+library(tidyr)\
+library(dplyr)\
+library(nlme)\
+library(purrr)\
+library(stringr)\
+\
+\
+#indistinguishable dyads\
+\
+apim.shared.group.sim <- function (J)\{\
+  dyad <- rep(1:J)                #creates dyad IDs\
+  x_A <- rnorm(J,0,1)             #creates values of x for actors\
+  x_P <- rnorm(J,0,1)             #creates values of x for partners\
+  gender <- rep(x = c(-1,1), length.out = J) #creates only 1 gender var that rotates between -1 and 1 & will eventually make same-gender dyads, but gender isn't really the focus here\
+  group <- rep(x = c(-1:1), length.out = J) #creates relationship type\
+  sumxAP <- x_A + x_P             #sum score\
+  diffxAP <- abs(x_A-x_P)            #difference score\
+  b0 <- 8.07                      #intercept\
+  b1 <- .16                       #sum score\
+  b2 <- .03                       #difference score\
+  b3 <- .10                       #gender\
+  b4 <- .08                       #group - from Harris & Orth (2020)\
+  b5 <- .43                       #sum by group\
+  b6 <- .00                       #diff by group\
+  y_A <- rnorm(J, b0 + (b1*sumxAP) + (b2*diffxAP) + (b3*gender) + (b4*group) + (b5*sumxAP*group) + (b6*diffxAP*group), (1-(b1^2 + b2^2 + b3^2 + b4^2 + b5^2 + b6^2))) #creates values of y for actors\
+  y_P <- rnorm(J, b0 + (b1*sumxAP) + (b2*diffxAP) + (b3*gender) + (b4*group) + (b5*sumxAP*group) + (b6*diffxAP*group), (1-(b1^2 + b2^2 + b3^2 + b4^2 + b5^2 + b6^2))) #creates values of y for partners\
+  data.frame(dyad, gender, group, y_A, y_P, x_A, x_P, sumxAP, diffxAP) %>%\
+    gather(key,value,-dyad, -gender, -group, -sumxAP, -diffxAP) %>% \
+    separate(key, c("key", "partnum"), sep = "_") %>%\
+    mutate(partnum = ifelse(partnum =="A", 1, 2)) %>% \
+    spread(key,value) %>% #these first 5 lines changes the dataset from dyadic to individual (long)\
+    split(.$dyad) %>% #from here changes the dataset from individual to pairwise\
+    map_df(function(MapD2P)\{\
+      \
+      person1 <- MapD2P %>% \
+        mutate(act.par = ifelse(partnum == 1,"A","P")) %>% \
+        gather(key,value,-dyad,-act.par, -gender, -group, -sumxAP, -diffxAP) %>% \
+        unite(new_key,key,act.par) %>% \
+        spread(new_key,value)\
+      \
+      person2 <- MapD2P %>% \
+        mutate(act.par = ifelse(partnum == 1,"P","A")) %>% \
+        gather(key,value,-dyad,-act.par, -gender, -group, -sumxAP, -diffxAP) %>% \
+        unite(new_key,key,act.par) %>% \
+        spread(new_key,value)\
+      \
+      bind_rows(person1,person2)\
+    \}) \
+  \
+\}\
+apim.shared.group.df <-apim.shared.group.sim(J = 600) #checking to see it worked; making the sample size large so that there's sufficient variation and can test all interactions\
+\
+#determines power for both the shared resource (sum effect) and the moderation\
+apim.shared.group.power <- function (J,n.sims=1000)\{    \
+  p_sum <- rep(NA,n.sims)                  \
+  p_sumgroup <- rep(NA,n.sims)\
+  for (s in 1:n.sims)\{\
+    sim <- apim.shared.group.sim(J)                   \
+    gls.shared.group.power <- gls(y_A ~ sumxAP + diffxAP + gender + group + sumxAP*group + diffxAP*group , #indistinguishable dyads\
+                                  data = sim,\
+                                  correlation = corCompSymm(form=~1|dyad),\
+                                  na.action = na.omit,\
+                                  control = list(singular.ok = TRUE)) #allowing singularity\
+    p_sum[s] <- coef(summary(gls.shared.group.power))["sumxAP","p-value"]   \
+    p_sumgroup[s] <- coef(summary(gls.shared.group.power))["sumxAP:group","p-value"]\
+  \}\
+  return(c(sum(p_sum <=.05)/n.sims, sum(p_sumgroup <= .05)/n.sims))\
+\}\
+\
+apim.shared.group.power(J=308,n.sims=5) #can change these values. 1st number is shared resource power, 2nd is the interaction\
+\
+\
+#testing above model\
+gls.shared.group.power1 <- gls(y_A ~ sumxAP + diffxAP + gender + group + sumxAP*group + diffxAP*group,\
+                              data = apim.shared.group.df,\
+                              correlation = corCompSymm(form=~1|dyad),\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0                               na.action = na.omit,\
+                              control = list(singular.ok = TRUE)))\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 summary(gls.shared.group.power1)\
+\
+}
