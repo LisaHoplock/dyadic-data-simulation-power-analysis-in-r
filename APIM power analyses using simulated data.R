@@ -16,7 +16,7 @@ apim.sim <- function (J){
   b3 <- .16                       #actor x partner interaction; can change this value
   y_A <- rnorm(J, b0 + (b1*x_A) + (b2*x_P) + (b3*x_A*x_P), (1-(b1^2 + b2^2 + b3^2))) #creates values of y for actors
   y_P <- rnorm(J, b0 + (b1*x_A) + (b2*x_P) + (b3*x_A*x_P), (1-(b1^2 + b2^2 + b3^2))) #creates values of y for partners
-  return(data.frame(dyad, y_A, y_P, x_A, x_P)) %>% #these next 5 lines changes the dataset from dyadic to individual (long)
+  data.frame(dyad, y_A, y_P, x_A, x_P) %>% #these next 5 lines changes the dataset from dyadic to individual (long)
     gather(key,value,-dyad) %>% 
     separate(key, c("key", "partnum"), sep = "_") %>%
     mutate(partnum = ifelse(partnum =="A", 1, 2)) %>% 
