@@ -64,7 +64,7 @@ apim.shared.dist.power <- function (J,n.sims=1000){    #power analysis
   p_sumgroup <- rep(NA,n.sims)
   for (s in 1:n.sims){
     sim2 <- apim.shared.dist.sim(J)                   
-    gls.shared.dist.power <- gls(y_A ~ sumxAP + diffxAP + role_A + gender + group
+    gls.shared.dist.power <- gls(y_A ~ sumxAP + diffxAP + gender + group + role_A 
                                  + sumxAP*role_A + diffxAP*role_A + sumxAP*group + diffxAP*group,
                                  data = sim2,
                                  correlation = corCompSymm(form=~1|partnum_A), 
@@ -81,7 +81,7 @@ apim.shared.dist.power(J=304,n.sims=1) #can change these values. 1st number is s
 
 
 #testing above model
-gls.shared.dist.power <-gls(y_A ~ sumxAP + diffxAP + role_A + gender + group
+gls.shared.dist.power <-gls(y_A ~ sumxAP + diffxAP + gender + group + role_A
                             + sumxAP*role_A + diffxAP*role_A + sumxAP*group + diffxAP*group,
                             data = apim.shared.dist.df,
                             correlation = corCompSymm(form=~1|partnum_A), 
