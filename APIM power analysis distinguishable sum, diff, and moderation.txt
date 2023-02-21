@@ -1,0 +1,100 @@
+#Simulate a distinguishable dyads dataset and conduct power analyses to determine power for the sum score
+#Code borrowed from Soderberg, Lane, & Hennes SIPS 2018 workshop (https://osf.io/mp2za); Randi Garcia’s R workshop (https://github.com/RandiLGarcia/2day-dyad-workshop/blob/master/Day 1/R Code/Day 1-Actor-Partner Interdependence Model.Rmd), and Ethan Young’s restructuring dyadic data tutorial (https://www.ethan-young.com/code/restructuring-dyadic-data/)
+#For more on power and things to consider, see Lane & Hennes, 2008 (https://journals.sagepub.com/doi/pdf/10.1177/0265407517710342) and 2009 (https://www.sciencedirect.com/science/article/abs/pii/S0306460318310244)
+
+library(tidyr)
+library(dplyr)
+library(nlme)
+library(purrr)
+library(stringr)
+
+#distinguishable dyads - distinguishable by role
+#testing enough power for variable of interest: sum score (shared resource) as well as an interaction with relationship type
+
+apim.shared.dist.sim <- function (J){
+  dyad <- rep(1:J)                #creates dyad IDs
+  x_A <- rnorm(J,0,1)             #creates values of x for actors
+  x_P <- rnorm(J,0,1)             #creates values of x for partners
+  gender <- rep(x = c(-1,1), length.out = J) #creates only 1 gender var that rotates between -1 and 1 & will eventually make same-gender dyads, but gender isn't really the focus here
+  group <- rep(x = c(-1:1), length.out = J) #creates relationship type
+  role_A <- rep(x = c(1,2)) #creates actor role
+  role_P <- rep(x = c(2,1)) #creates partner role- note that sometimes the actor is entered first, and other times the partner is entered first (i.e., the pattern is 1, 2, 2, 1, 1, 2...), but that there's always 1 person assigned to 1 and 1 person assigned to 2
+  sumxAP <- x_A + x_P             #sum score
+  diffxAP <- abs(x_A-x_P)            #difference score
+#fixed effects
+  b0 <- 8.07                      #intercept; can change this value
+  b1 <- .16                       #sum score; can change this value
+  b2 <- .03                       #difference score; can change this value
+  b3 <- .10                       #gender; can change this value
+  b4 <- .08                       #group; can change this value 
+  b5 <- .10                       #role; can change this value
+  b6 <- .01                       #sum by role; can change this value
+  b7 <- .01                       #diff by role; can change this value
+  b8 <- .43                       #sum by group; can change this value 
+  b9 <- .00                       #diff by group; can change this value
+#random effects
+  vsub.b0 <-.3                    #variation in intercept; can change this value 
+  vsub.b1 <-.3                    #variation in slope; can change this value
+  vresid <- .3                    #error variance; can change this value
+#combine fixed and random effects
+  b0.int <- rnorm(J,b0,sqrt(vsub.b0)) #generate intercept
+  b1.slope <- rnorm(J,b1,sqrt(vsub.b1))  #generate a slope
+  y_A <- rnorm(J, b0.int[dyad] + (b1.slope[dyad]*sumxAP) + (b2*diffxAP) + (b3*gender) + (b4*group) + (b5*role_A) + (b6*sumxAP*role_A) + (b7*diffxAP*role_A) + (b8*sumxAP*group) + (b9*diffxAP*group), sqrt(vresid)) #creates values of y for actors
+  y_P <- rnorm(J, b0.int[dyad] + (b1.slope[dyad]*sumxAP) + (b2*diffxAP) + (b3*gender) + (b4*group) + (b5*role_A) + (b6*sumxAP*role_A) + (b7*diffxAP*role_A)+ (b8*sumxAP*group) + (b9*diffxAP*group), sqrt(vresid))  #creates values of y for partners
+    data.frame(dyad, gender, group, role_A, role_P, y_A, y_P, x_A, x_P, sumxAP, diffxAP) %>%
+    gather(key,value,-dyad, -gender, -group, -sumxAP, -diffxAP) %>% 
+    separate(key, c("key", "partnum"), sep = "_") %>%
+    mutate(partnum = ifelse(partnum =="A", 1, 2)) %>% 
+    spread(key,value) %>% #these first 5 lines changes the dataset from dyadic to individual (long)
+    split(.$dyad) %>% #from here changes the dataset from individual to pairwise
+    map_df(function(MapD2P){
+      
+      person1 <- MapD2P %>% 
+        mutate(act.par = ifelse(partnum == 1,"A","P")) %>% 
+        gather(key,value,-dyad,-act.par, -gender, -group, -sumxAP, -diffxAP) %>% 
+        unite(new_key,key,act.par) %>% 
+        spread(new_key,value)
+      
+      person2 <- MapD2P %>% 
+        mutate(act.par = ifelse(partnum == 1,"P","A")) %>% 
+        gather(key,value,-dyad,-act.par, -gender, -group, -sumxAP, -diffxAP) %>% 
+        unite(new_key,key,act.par) %>% 
+        spread(new_key,value)
+      
+      bind_rows(person1,person2)
+    }) 
+  
+}
+apim.shared.dist.df <-apim.shared.dist.sim(J = 600) #checking to see it worked; making the sample size large so that there's sufficient variation and can test all interactions
+
+apim.shared.dist.power <- function (J,n.sims=1000){    #power analysis
+  p_sum <- rep(NA,n.sims)                  
+  p_sumgroup <- rep(NA,n.sims)
+  for (s in 1:n.sims){
+    sim2 <- apim.shared.dist.sim(J)                   
+    gls.shared.dist.power <- gls(y_A ~ sumxAP + diffxAP + gender + group + role_A
+                                 + sumxAP*role_A + diffxAP*role_A + sumxAP*group + diffxAP*group,
+                                 data = sim2,
+                                 correlation = corCompSymm(form=~1|partnum_A), 
+                                 weights = varIdent(form=~1|role_A), 
+                                 na.action = na.omit,
+                                 control = list(singular.ok = TRUE)) #allowing singularity
+    p_sum[s] <- coef(summary(gls.shared.dist.power))["sumxAP","p-value"]   
+    p_sumgroup[s] <- coef(summary(gls.shared.dist.power))["sumxAP:group","p-value"]
+  }
+  return(c(sum(p_sum <=.05)/n.sims, sum(p_sumgroup <= .05)/n.sims))
+}
+
+apim.shared.dist.power(J=304,n.sims=1) #can change these values. 1st number is shared resource power, 2nd is the interaction
+
+
+#testing above model
+gls.shared.dist.power <-gls(y_A ~ sumxAP + diffxAP + gender + group + role_A
+                            + sumxAP*role_A + diffxAP*role_A + sumxAP*group + diffxAP*group,
+                            data = apim.shared.dist.df,
+                            correlation = corCompSymm(form=~1|partnum_A), 
+                            weights = varIdent(form=~1|role_A),
+                            control = list(singular.ok = TRUE)) #allowing singularity
+summary(gls.shared.dist.power)
+
+
